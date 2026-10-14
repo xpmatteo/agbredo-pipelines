@@ -44,6 +44,13 @@ on:
         type: string
         required: false
         default: main
+      pr-branch:
+        description: >-
+          The branch the fixes are pushed to and the PR is opened from. While a
+          PR from it is open, the audit skips.
+        type: string
+        required: false
+        default: agent-instructions-audit
       workflow-file:
         description: >-
           The caller workflow's file name, e.g. agent-instructions-audit.yml.
@@ -71,7 +78,7 @@ jobs:
       id-token: write
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      BRANCH: agent-instructions-audit
+      BRANCH: ${{ inputs.pr-branch }}
     steps:
       - uses: actions/checkout@v4
         with:

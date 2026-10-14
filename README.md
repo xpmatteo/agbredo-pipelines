@@ -107,6 +107,7 @@ Inputs:
 | --- | --- | --- |
 | `agbredo-url` | empty | Agbredo's HTTPS origin, without a path. Empty sends no telemetry. |
 | `extra-instructions` | empty | Text appended to Claude's prompt: what to know about this repository to apply the checks, such as its issue ID prefix, where its test and design docs are, and files absent on purpose. |
+| `pr-branch` | `agent-instructions-audit` | The branch fixes are pushed to and the PR comes from. While a PR from it is open, the audit skips. |
 | `base-branch` | `main` | The branch audited and targeted by the PR. A scheduled caller runs on its default branch; the pipeline checks out this branch. |
 | `workflow-file` | the caller's | The caller's workflow file name, whose last successful run is the baseline. Taken from `github.workflow_ref` when empty. |
 
