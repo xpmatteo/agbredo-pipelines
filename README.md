@@ -68,6 +68,11 @@ actions are bumped together: a release changes the `@vN` references in the
 pipeline, then tags that commit `vN`. Moving an existing tag changes what
 every caller of that tag runs on its next run.
 
+A caller that pins a branch or a SHA, for example to test a change, still
+gets the actions at `@v1`, because the pipeline names them by tag. To test
+a branch end to end, point the pipeline's `@v1` references at that branch
+for the duration of the test.
+
 Pipelines send telemetry with
 [`xpmatteo/agbredo/integrations/claude-code-otlp`](https://github.com/xpmatteo/agbredo/tree/main/integrations/claude-code-otlp),
 pinned to an Agbredo release tag.
@@ -102,7 +107,7 @@ Inputs:
 | --- | --- | --- |
 | `agbredo-url` | empty | Agbredo's HTTPS origin, without a path. Empty sends no telemetry. |
 | `extra-instructions` | empty | Text appended to Claude's prompt: what to know about this repository to apply the checks, such as its issue ID prefix, where its test and design docs are, and files absent on purpose. |
-| `base-branch` | `main` | The branch audited and targeted by the PR. |
+| `base-branch` | `main` | The branch audited and targeted by the PR. A scheduled caller runs on its default branch; the pipeline checks out this branch. |
 | `workflow-file` | the caller's | The caller's workflow file name, whose last successful run is the baseline. Taken from `github.workflow_ref` when empty. |
 
 Secrets: `CLAUDE_CODE_OAUTH_TOKEN` (required).

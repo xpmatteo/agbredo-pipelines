@@ -75,6 +75,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ inputs.base-branch }}
           fetch-depth: 0
 
       - name: Skip unless the base branch or beadwork moved
