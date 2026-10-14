@@ -1,0 +1,201 @@
+# Agent instructions audit: a pipeline that audits a repository's agent
+# instructions, CLAUDE.md and README.md.
+#
+# Each run, if the base branch or the bw tracker (`beadwork` branch) moved
+# since the caller workflow's last successful run: the checks in
+# actions/agent-instructions-audit/checks.md are loaded into the runner's
+# local bw as items aginstaudit-NN; Claude works them one by one, editing the
+# files or writing questions; the items are discarded. Edits become a PR;
+# questions become one bw issue (label `question`, P1), synced. One PR at a
+# time: while one is open, the run skips. A run that is not on a schedule
+# always audits.
+#
+# The caller repository needs: a Go module (go.mod, for installing bw), an
+# existing `beadwork` branch, the CLAUDE_CODE_OAUTH_TOKEN secret (from
+# `claude setup-token`), and, under Settings > Actions > General, "Allow
+# GitHub Actions to create and approve pull requests". See README.md.
+#
+# Steps that need files of this repository run them through the composite
+# action actions/agent-instructions-audit, at the same tag as this pipeline:
+# inside a reusable workflow, the checkout and ./ paths are the caller's.
+
+name: Agent instructions audit
+
+on:
+  workflow_call:
+    inputs:
+      agbredo-url:
+        description: >-
+          Agbredo's public HTTPS origin, without a path. When empty, no
+          telemetry is sent. Callers usually pass vars.AGBREDO_URL.
+        type: string
+        required: false
+        default: ""
+      extra-instructions:
+        description: >-
+          Text appended to Claude's prompt: what Claude should know about this
+          repository to apply the checks (issue ID prefix, where the tests and
+          design docs are, files that are absent on purpose).
+        type: string
+        required: false
+        default: ""
+      base-branch:
+        description: The branch the audit reads and its PR targets.
+        type: string
+        required: false
+        default: main
+      workflow-file:
+        description: >-
+          The caller workflow's file name, e.g. agent-instructions-audit.yml.
+          Its last successful run is the baseline for "moved since". Empty
+          means the one in github.workflow_ref, which in a called workflow
+          names the caller.
+        type: string
+        required: false
+        default: ""
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN:
+        description: Claude Code OAuth token, from `claude setup-token`.
+        required: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    # A called workflow can only narrow the caller's permissions: the caller
+    # must grant at least these.
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: read
+      id-token: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      BRANCH: agent-instructions-audit
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Skip unless the base branch or beadwork moved
+        id: gate
+        uses: xpmatteo/agbredo-pipelines/actions/agent-instructions-audit@v1
+        with:
+          step: gate
+          branch: ${{ env.BRANCH }}
+          base-branch: ${{ inputs.base-branch }}
+          workflow-file: ${{ inputs.workflow-file || github.workflow_ref }}
+
+      - uses: actions/setup-go@v5
+        if: steps.gate.outputs.skip == 'false'
+        with:
+          go-version-file: go.mod
+
+      - name: Install bw (beadwork)
+        if: steps.gate.outputs.skip == 'false'
+        uses: xpmatteo/agbredo-pipelines/actions/agent-instructions-audit@v1
+        with:
+          step: install-bw
+
+      - name: Gather facts for Claude
+        if: steps.gate.outputs.skip == 'false'
+        uses: xpmatteo/agbredo-pipelines/actions/agent-instructions-audit@v1
+        with:
+          step: facts
+
+      - name: Load the checks into the local bw
+        if: steps.gate.outputs.skip == 'false'
+        uses: xpmatteo/agbredo-pipelines/actions/agent-instructions-audit@v1
+        with:
+          step: load-checks
+
+      # Reporting is opt-in: no telemetry unless the caller gives a URL. The
+      # first run that gets a token creates the deployment in Agbredo, named
+      # after the caller's repository and workflow file.
+      - name: Send Claude Code telemetry to Agbredo
+        if: steps.gate.outputs.skip == 'false' && inputs.agbredo-url != ''
+        uses: xpmatteo/agbredo/integrations/claude-code-otlp@v1
+        with:
+          url: ${{ inputs.agbredo-url }}
+          source: agent-instructions-audit
+
+      - name: Audit with Claude
+        id: claude
+        if: steps.gate.outputs.skip == 'false'
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          claude_args: |
+            --max-turns 150
+            --allowedTools "Read,Glob,Grep,Write,Edit,Bash(git log:*),Bash(git show:*),Bash(git diff:*),Bash(git ls-files:*),Bash(go doc:*),Bash(go list:*),Bash(ls:*),Bash(cat:*),Bash(head:*),Bash(wc:*),Bash(grep:*),Bash(find:*),Bash(bw prime:*),Bash(bw list:*),Bash(bw show:*),Bash(bw ready:*),Bash(bw blocked:*),Bash(bw label list:*),Bash(bw close:*)"
+          prompt: |
+            Audit this repo's agent instructions, CLAUDE.md and README.md, by
+            working through a checklist in bw: the items labelled
+            `aginstaudit` (`bw list --label aginstaudit --limit 100`). They
+            are chained, so exactly one is open and unblocked at a time.
+
+            For each item, in order, until none is open:
+            1. `bw show <id>`: it gives the goal, the criteria, how to check,
+               and what to do if the check fails.
+            2. Do the check. Verify before acting; act only on real failures.
+            3. On a failure, either fix it by editing CLAUDE.md or README.md
+               (keep them brief), or, when the item says to ask, or the fix
+               needs a person or a file other than these two, append a
+               question to .audit/questions.md: one `- ` bullet with the
+               question, the evidence, and the check's title.
+            4. `bw close <id> --reason "<pass | fixed: what | asked: what>"`.
+
+            Edit no file but CLAUDE.md, README.md and the .audit/ files you
+            are told to write. Don't ask a question already open in
+            `bw list --label question --all`.
+
+            When the list is done and you changed a file, write the PR text:
+            .audit/title.txt (one line, under 70 chars) and .audit/body.md,
+            which explains to a reviewer, per change: the check, what was
+            wrong, the evidence, what you changed.
+
+            Tools: read files with Read, Grep and Glob. Keep each Bash call to
+            one plain command, with no pipes, `;`, `&&`, redirects, variables
+            or `$(...)`; anything else is refused.
+
+            ${{ inputs.extra-instructions }}
+
+      - name: Save Claude's transcript
+        if: always() && steps.claude.outputs.execution_file != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: claude-transcript
+          path: ${{ steps.claude.outputs.execution_file }}
+          retention-days: 14
+
+      - name: Check Claude's work
+        id: check
+        if: steps.gate.outputs.skip == 'false'
+        uses: xpmatteo/agbredo-pipelines/actions/agent-instructions-audit@v1
+        with:
+          step: check
+          execution-file: ${{ steps.claude.outputs.execution_file }}
+
+      # Deletes the checklist and its commits from this clone, so the sync
+      # below can never push them. Runs even when the audit failed.
+      - name: Delete the checks from the local bw
+        if: always() && steps.gate.outputs.skip == 'false'
+        uses: xpmatteo/agbredo-pipelines/actions/agent-instructions-audit@v1
+        with:
+          step: cleanup
+
+      - name: File the questions in bw
+        if: steps.gate.outputs.skip == 'false'
+        uses: xpmatteo/agbredo-pipelines/actions/agent-instructions-audit@v1
+        with:
+          step: file-questions
+
+      - name: Open a PR with the fixes
+        if: steps.gate.outputs.skip == 'false'
+        uses: xpmatteo/agbredo-pipelines/actions/agent-instructions-audit@v1
+        with:
+          step: open-pr
+          branch: ${{ env.BRANCH }}
+          base-branch: ${{ inputs.base-branch }}
+          denied: ${{ steps.check.outputs.denied }}

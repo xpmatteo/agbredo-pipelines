@@ -1,0 +1,65 @@
+name: Agent instructions audit steps
+description: >-
+  The scripts and checklist of the agent instructions audit pipeline
+  (.github/workflows/agent-instructions-audit.yml in this repository). Each
+  call runs one step, named by `step`, in the caller's checkout. Meant for
+  that pipeline only; call it at the same tag as the pipeline.
+inputs:
+  step:
+    description: >-
+      The step to run: install-bw, gate, facts, load-checks, check, cleanup,
+      file-questions or open-pr. Each is scripts/<step>.sh next to this file.
+    required: true
+  branch:
+    description: The branch the audit's PR is pushed to.
+    required: false
+    default: agent-instructions-audit
+  base-branch:
+    description: The branch the audit reads and its PR targets.
+    required: false
+    default: main
+  workflow-file:
+    description: >-
+      gate only: the caller workflow, as a file name or as github.workflow_ref
+      (owner/repo/.github/workflows/name.yml@ref). Its last successful run
+      on base-branch is the baseline.
+    required: false
+    default: ""
+  execution-file:
+    description: "check only: the execution_file output of claude-code-action."
+    required: false
+    default: ""
+  denied:
+    description: "open-pr only: the denied output of the check step."
+    required: false
+    default: "0"
+  github-token:
+    description: Token for gh (PRs, labels, runs).
+    required: false
+    default: ${{ github.token }}
+outputs:
+  skip:
+    description: gate only. "true" when the audit should not run, else "false".
+    value: ${{ steps.run.outputs.skip }}
+  denied:
+    description: check only. How many tool calls Claude was refused.
+    value: ${{ steps.run.outputs.denied }}
+runs:
+  using: composite
+  steps:
+    - id: run
+      shell: bash
+      env:
+        STEP: ${{ inputs.step }}
+        BRANCH: ${{ inputs.branch }}
+        BASE_BRANCH: ${{ inputs.base-branch }}
+        WORKFLOW_FILE: ${{ inputs.workflow-file }}
+        EXEC: ${{ inputs.execution-file }}
+        DENIED: ${{ inputs.denied }}
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: |
+        case "$STEP" in
+          install-bw | gate | facts | load-checks | check | cleanup | file-questions | open-pr) ;;
+          *) echo "::error::unknown step '$STEP'"; exit 1 ;;
+        esac
+        "$GITHUB_ACTION_PATH/scripts/$STEP.sh"
