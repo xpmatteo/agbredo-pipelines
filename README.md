@@ -77,6 +77,21 @@ Pipelines send telemetry with
 [`xpmatteo/agbredo/integrations/claude-code-otlp`](https://github.com/xpmatteo/agbredo/tree/main/integrations/claude-code-otlp),
 pinned to an Agbredo release tag.
 
+## Marking escalations for Agbredo
+
+A pipeline that opens a PR adds one line at the very end of the PR body:
+
+```
+Agbredo-Run: $GITHUB_RUN_ID/$GITHUB_RUN_ATTEMPT
+```
+
+Put a blank line before it. Skip the line if either variable is not set.
+
+Agbredo links the PR to the run as "declared" only when all of these hold:
+the PR author is a bot, the PR branch is in the same repository, and the PR
+was opened during that run. Otherwise the PR is still recorded, as inferred
+or unlinked, with a finding.
+
 ## Pipelines
 
 ### Agent instructions audit
