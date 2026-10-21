@@ -1,16 +1,17 @@
 # Agent instructions checks
 
-The agent instructions audit pipeline loads each `##` section below into the
-runner's local bw as one item, `aginstaudit-NN`, in order, each blocked by the
-one before. Claude works them one at a time; the items never leave the runner.
-Each section: Goal, Criteria, How, If it fails. "Fix" means edit CLAUDE.md or
-README.md; "Ask" means append a question to .audit/questions.md.
+The agent instructions audit pipeline copies this file to .audit/checks.md
+in the audited repository, and Claude works through its `##` sections in
+order, one result line each in .audit/results.md. Each section: Goal,
+Criteria, How, If it fails. "Fix" means edit CLAUDE.md or README.md; "Ask"
+means append a question to .audit/questions.md.
 
 ## Dead references
 
 Goal: every path, package and link in the files resolves.
 Criteria: a reference an agent follows and finds nothing at costs a wasted search.
-How: confirm each line of .audit/dead-refs.txt with ls, Glob or `go list`.
+How: confirm each line of .audit/dead-refs.txt with ls, Glob or the
+language's own tools (e.g. `go list`).
 If it fails: fix the reference, or drop it. Ask if the target should exist
 but doesn't (a generated file, a missing doc).
 
@@ -19,7 +20,8 @@ but doesn't (a generated file, a missing doc).
 Goal: every command shown runs as written.
 Criteria: commands are the most copied lines; one wrong flag misleads every agent.
 How: for each command, check the binary, package, script, flags and test
-names exist (`go list`, `go doc`, ls, Grep in the script or the test).
+names exist (the language's own tools such as `go list` and `go doc`, ls,
+Grep in the script or the test).
 If it fails: fix the command. Ask if you can't tell which form is right.
 
 ## Rules match enforcement
@@ -31,32 +33,24 @@ checker programs) with Grep and Read.
 If it fails: fix the wording to match the enforcer. Ask if the rule itself
 seems wrong or unenforced on purpose.
 
-## bw conventions
-
-Goal: what the files say about bw matches how the tracker is used.
-Criteria: the files say how to use bw; bw holds the work.
-How: `bw label list`, `bw list --label <label>` for each label described;
-compare meanings and priorities with real items.
-If it fails: fix the description. Ask if a label in use is undescribed and
-its meaning isn't clear from its items.
-
 ## No tracking
 
-Goal: no fact about specific work items: issue IDs, which goals or epics
-exist, what blocks what, status ("X is in progress", "Y was done").
-Criteria: tracking facts go stale; they belong in bw even when accurate.
-How: Grep the files for issue IDs (the prefix `bw list` shows), "in
-progress", "done", "TODO", "next", dates, enumerations of goals or epics.
-If it fails: fix by replacing the fact with the bw command that finds it
-(e.g. `bw list --label goal`). Ask if the fact isn't in bw yet.
+Goal: no fact about specific work items: issue IDs from any tracker, which
+goals or epics exist, what blocks what, status ("X is in progress", "Y was
+done").
+Criteria: tracking facts go stale; they belong in the tracker even when accurate.
+How: Grep the files for issue IDs, "in progress", "done", "TODO", "next",
+dates, enumerations of goals or epics.
+If it fails: fix by replacing the fact with a pointer to where it is
+tracked, if the files say where. Ask otherwise.
 
 ## Missing knowledge
 
-Goal: an agent with only these files can start the next real tasks.
+Goal: an agent with only these files can do the kind of work this repo gets.
 Criteria: the files hold context an agent won't see in the code.
-How: take the top 3 of `bw ready`; for each, `bw show` it and ask what an
-agent would get wrong with only CLAUDE.md, README.md and the pointers they
-give.
+How: take the last 10 commits that change code (`git log`), skipping trivial
+ones; for each, `git show` it and ask what an agent would have got wrong
+with only CLAUDE.md, README.md and the pointers they give.
 If it fails: fix by adding a line or a pointer, if the knowledge is durable
 and you can verify it. Ask otherwise.
 
@@ -64,8 +58,8 @@ and you can verify it. Ask otherwise.
 
 Goal: the files state the choices that produced the code, not a summary of it.
 Criteria: a summary of code is learnable from the code and goes stale.
-How: read each section; for each paragraph ask whether `go doc`, the code or
-docs/ already says it.
+How: read each section; for each paragraph ask whether the code, its doc
+comments or docs/ already says it.
 If it fails: fix by replacing the summary with a pointer, keeping any
 principle it carried.
 
@@ -90,36 +84,35 @@ If it fails: fix if the answer is in the repo. Ask otherwise.
 
 Goal: the files say which changes need a design conversation.
 Criteria: complexity and risk boundaries are explicit, not discovered in review.
-How: read the architecture section, any design docs and the package doc
-comments (`go doc`) for boundaries the files omit.
+How: read the architecture section, any design docs and the doc comments of
+the main modules for boundaries the files omit.
 If it fails: fix if a boundary is written down elsewhere and missing here.
 Ask if you suspect one that nobody wrote down.
 
 ## Direction
 
 Goal: CLAUDE.md says where the codebase is going: the major changes ahead,
-as broad direction ("eventually we will be multitenant"), not features.
+as broad direction ("eventually we will be multitenant", "maintenance only,
+no new major features"), not features.
 Criteria: an agent that knows the direction doesn't build against it.
 Direction is not tracking: it changes rarely and is not a list of items.
 How: read CLAUDE.md for statements of direction; judge whether one is
-missing, vague or contradicted by the code. Don't derive it from bw.
+missing, vague or contradicted by the code.
 If it fails: Ask. Only people know where the project is going.
 
 ## Context only people know
 
 Goal: audience, client, people and their roles are current.
 Criteria: the files carry context absent from the code.
-How: read what the files say about who uses this, who decides (`question`
-label), and the client; check against recent `git log` and bw.
+How: read what the files say about who uses this, who decides, and the
+client; check against recent `git log`.
 If it fails: Ask. Only people can confirm this.
 
-## Duplication and churn
+## Duplication
 
-Goal: nothing is said twice, and the files rarely change with feature work.
-Criteria: one home per fact; a file edited often holds the wrong things.
-How: compare the two files with each other and with docs/; read
-.audit/churn.txt and `git log -p --since=90.days -- CLAUDE.md README.md`
-for lines edited repeatedly.
+Goal: nothing is said twice.
+Criteria: one home per fact.
+How: compare the two files with each other and with docs/.
 If it fails: fix by keeping one copy and pointing at it. Ask if the right
 home is outside these files.
 

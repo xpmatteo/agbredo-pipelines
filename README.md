@@ -29,6 +29,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  issues: write
   actions: read
   id-token: write
 
@@ -111,17 +112,20 @@ Label PRs and Issues opened by a pipeline `ai-agent-generated`.
 `actions/agent-instructions-audit/`.
 
 Audits a repository's agent instructions, CLAUDE.md and README.md. If the
-base branch or the bw tracker moved since the caller's last successful run
-(or on any run not started by the schedule), it loads the checklist
-`actions/agent-instructions-audit/checks.md` into a local bw, and Claude works
-through it. Edits become one PR on branch `agent-instructions-audit`;
-questions become one bw issue labelled `question`, synced to the tracker.
-While the audit's PR is open, runs skip.
+base branch moved since the caller's last successful run (or on any run not
+started by the schedule), Claude works through the checklist
+`actions/agent-instructions-audit/checks.md`. Edits become one PR on branch
+`agent-instructions-audit`, with Claude's questions in its body; questions
+alone become one issue. Both are labelled `agent-instructions-audit`. While
+one of them is open, runs skip. The audit assumes no language and no issue
+tracker; `extra-instructions` tells Claude about the repository's.
+
+The steps are `actions/agent-instructions-audit/scripts/steps/NN-<step>.sh`,
+numbered in the order the pipeline runs them; Claude's prompt and tool
+allowlist are `prompt.md` and `allowed-tools.txt` next to `checks.md`.
 
 The target repository needs:
 
-- a Go module (`go.mod`), used to install bw;
-- a `beadwork` branch, the bw tracker; the pipeline never creates it;
 - the secret `CLAUDE_CODE_OAUTH_TOKEN`, from `claude setup-token`;
 - under Settings > Actions > General, "Allow GitHub Actions to create and
   approve pull requests";
@@ -132,14 +136,14 @@ Inputs:
 | Input | Default | Meaning |
 | --- | --- | --- |
 | `extra-instructions` | empty | Text appended to Claude's prompt: what to know about this repository to apply the checks, such as its issue ID prefix, where its test and design docs are, and files absent on purpose. |
-| `pr-branch` | `agent-instructions-audit` | The branch fixes are pushed to and the PR comes from. While a PR from it is open, the audit skips. |
+| `pr-branch` | `agent-instructions-audit` | The branch fixes are pushed to and the PR comes from. |
 | `base-branch` | `main` | The branch audited and targeted by the PR. A scheduled caller runs on its default branch; the pipeline checks out this branch. |
 | `workflow-file` | the caller's | The caller's workflow file name, whose last successful run is the baseline. Taken from `github.workflow_ref` when empty. |
 
 Secrets: `CLAUDE_CODE_OAUTH_TOKEN` (required).
 
 Permissions the caller grants: `contents: write`, `pull-requests: write`,
-`actions: read`, `id-token: write`.
+`issues: write`, `actions: read`, `id-token: write`.
 
 The dead-reference finder runs outside the pipeline too: from inside a
 checkout of the target repository, run

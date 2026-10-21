@@ -1,0 +1,19 @@
+# The tools Claude may use in the audit, one per line, as Claude Code's
+# --allowedTools takes them. Lines starting with # are ignored.
+Read
+Glob
+Grep
+Write
+Edit
+Bash(git log:*)
+Bash(git show:*)
+Bash(git diff:*)
+Bash(git ls-files:*)
+Bash(go doc:*)
+Bash(go list:*)
+Bash(ls:*)
+Bash(cat:*)
+Bash(head:*)
+Bash(wc:*)
+Bash(grep:*)
+Bash(find:*)

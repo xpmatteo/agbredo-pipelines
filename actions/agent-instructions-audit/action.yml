@@ -1,14 +1,15 @@
 name: Agent instructions audit steps
 description: >-
-  The scripts and checklist of the agent instructions audit pipeline
+  The scripts, prompt and checklist of the agent instructions audit pipeline
   (.github/workflows/agent-instructions-audit.yml in this repository). Each
   call runs one step, named by `step`, in the caller's checkout. Meant for
   that pipeline only; call it at the same tag as the pipeline.
 inputs:
   step:
     description: >-
-      The step to run: install-bw, gate, facts, load-checks, check, cleanup,
-      file-questions or open-pr. Each is scripts/<step>.sh next to this file.
+      The step to run: gate, facts, prompt, check or open-pr-or-issue. Each
+      is scripts/steps/NN-<step>.sh next to this file; NN is the order the
+      pipeline runs them in.
     required: true
   branch:
     description: The branch the audit's PR is pushed to.
@@ -25,22 +26,32 @@ inputs:
       on base-branch is the baseline.
     required: false
     default: ""
+  extra-instructions:
+    description: "prompt only: text appended to Claude's prompt."
+    required: false
+    default: ""
   execution-file:
     description: "check only: the execution_file output of claude-code-action."
     required: false
     default: ""
   denied:
-    description: "open-pr only: the denied output of the check step."
+    description: "open-pr-or-issue only: the denied output of the check step."
     required: false
     default: "0"
   github-token:
-    description: Token for gh (PRs, labels, runs).
+    description: Token for gh (PRs, issues, labels, runs).
     required: false
     default: ${{ github.token }}
 outputs:
   skip:
     description: gate only. "true" when the audit should not run, else "false".
     value: ${{ steps.run.outputs.skip }}
+  prompt:
+    description: prompt only. Claude's prompt.
+    value: ${{ steps.run.outputs.prompt }}
+  allowed-tools:
+    description: prompt only. The tools Claude may use, comma separated.
+    value: ${{ steps.run.outputs.allowed-tools }}
   denied:
     description: check only. How many tool calls Claude was refused.
     value: ${{ steps.run.outputs.denied }}
@@ -54,12 +65,13 @@ runs:
         BRANCH: ${{ inputs.branch }}
         BASE_BRANCH: ${{ inputs.base-branch }}
         WORKFLOW_FILE: ${{ inputs.workflow-file }}
+        EXTRA: ${{ inputs.extra-instructions }}
         EXEC: ${{ inputs.execution-file }}
         DENIED: ${{ inputs.denied }}
         GH_TOKEN: ${{ inputs.github-token }}
       run: |
         case "$STEP" in
-          install-bw | gate | facts | load-checks | check | cleanup | file-questions | open-pr) ;;
+          gate | facts | prompt | check | open-pr-or-issue) ;;
           *) echo "::error::unknown step '$STEP'"; exit 1 ;;
         esac
-        "$GITHUB_ACTION_PATH/scripts/$STEP.sh"
+        "$GITHUB_ACTION_PATH"/scripts/steps/[0-9][0-9]-"$STEP".sh
