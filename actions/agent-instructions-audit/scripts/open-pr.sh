@@ -32,5 +32,7 @@ git commit -q -m "$title" -m "Nightly agent instructions audit, run $GITHUB_RUN_
 git push -f origin "$BRANCH"
 gh label create agent-instructions-audit --color 0e8a16 \
   --description "Found by the nightly agent instructions audit" 2>/dev/null || true
+gh label create ai-agent-generated --color BFD4F2 \
+  --description "Written by an AI agent, opened by automation" 2>/dev/null || true
 gh pr create --base "$BASE_BRANCH" --head "$BRANCH" --title "$title" \
-  --label agent-instructions-audit --body-file .audit/pr.md
+  --label agent-instructions-audit --label ai-agent-generated --body-file .audit/pr.md

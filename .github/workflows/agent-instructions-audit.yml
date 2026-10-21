@@ -24,13 +24,6 @@ name: Agent instructions audit
 on:
   workflow_call:
     inputs:
-      agbredo-url:
-        description: >-
-          Agbredo's public HTTPS origin, without a path. When empty, no
-          telemetry is sent. Callers usually pass vars.AGBREDO_URL.
-        type: string
-        required: false
-        default: ""
       extra-instructions:
         description: >-
           Text appended to Claude's prompt: what Claude should know about this
@@ -87,7 +80,7 @@ jobs:
 
       - name: Skip unless the base branch or beadwork moved
         id: gate
-        uses: xpmatteo/agbredo-pipelines/actions/agent-instructions-audit@v1
+        uses: xpmatteo/agbredo-pipelines/actions/agent-instructions-audit@v2
         with:
           step: gate
           branch: ${{ env.BRANCH }}
@@ -101,31 +94,33 @@ jobs:
 
       - name: Install bw (beadwork)
         if: steps.gate.outputs.skip == 'false'
-        uses: xpmatteo/agbredo-pipelines/actions/agent-instructions-audit@v1
+        uses: xpmatteo/agbredo-pipelines/actions/agent-instructions-audit@v2
         with:
           step: install-bw
 
       - name: Gather facts for Claude
         if: steps.gate.outputs.skip == 'false'
-        uses: xpmatteo/agbredo-pipelines/actions/agent-instructions-audit@v1
+        uses: xpmatteo/agbredo-pipelines/actions/agent-instructions-audit@v2
         with:
           step: facts
 
       - name: Load the checks into the local bw
         if: steps.gate.outputs.skip == 'false'
-        uses: xpmatteo/agbredo-pipelines/actions/agent-instructions-audit@v1
+        uses: xpmatteo/agbredo-pipelines/actions/agent-instructions-audit@v2
         with:
           step: load-checks
 
-      # Reporting is opt-in: no telemetry unless the caller gives a URL. The
-      # first run that gets a token creates the deployment in Agbredo, named
-      # after the caller's repository and workflow file.
-      - name: Send Claude Code telemetry to Agbredo
-        if: steps.gate.outputs.skip == 'false' && inputs.agbredo-url != ''
-        uses: xpmatteo/agbredo/integrations/claude-code-otlp@v1
-        with:
-          url: ${{ inputs.agbredo-url }}
-          source: agent-instructions-audit
+      # Claude Code sends this GitHub OIDC token with its telemetry, so that
+      # Agbredo knows the run comes from this pipeline. We get it here,
+      # because claude-code-action hides the OIDC variables from Claude.
+      # The token expires in minutes; Agbredo accepts it for the whole job.
+      - name: Get a telemetry token
+        if: steps.gate.outputs.skip == 'false'
+        run: |
+          token=$(curl -sSf -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=agbredo" | jq -r .value)
+          echo "::add-mask::$token"
+          echo "OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer $token" >> "$GITHUB_ENV"
 
       - name: Audit with Claude
         id: claude
@@ -134,6 +129,20 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
+          # Telemetry goes to Agbredo, which lists a run's Agents by github.step.
+          settings: |
+            {
+              "env": {
+                "CLAUDE_CODE_ENABLE_TELEMETRY": "1",
+                "OTEL_METRICS_EXPORTER": "otlp",
+                "OTEL_LOGS_EXPORTER": "otlp",
+                "OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",
+                "OTEL_EXPORTER_OTLP_ENDPOINT": "https://www.agbredo.com/api/otlp",
+                "OTEL_METRIC_EXPORT_INTERVAL": "10000",
+                "OTEL_LOGS_EXPORT_INTERVAL": "5000",
+                "OTEL_RESOURCE_ATTRIBUTES": "github.repository=${{ github.repository }},github.run_id=${{ github.run_id }},github.run_attempt=${{ github.run_attempt }},github.job=${{ github.job }},github.step=audit"
+              }
+            }
           claude_args: |
             --max-turns 150
             --allowedTools "Read,Glob,Grep,Write,Edit,Bash(git log:*),Bash(git show:*),Bash(git diff:*),Bash(git ls-files:*),Bash(go doc:*),Bash(go list:*),Bash(ls:*),Bash(cat:*),Bash(head:*),Bash(wc:*),Bash(grep:*),Bash(find:*),Bash(bw prime:*),Bash(bw list:*),Bash(bw show:*),Bash(bw ready:*),Bash(bw blocked:*),Bash(bw label list:*),Bash(bw close:*)"
@@ -180,7 +189,7 @@ jobs:
       - name: Check Claude's work
         id: check
         if: steps.gate.outputs.skip == 'false'
-        uses: xpmatteo/agbredo-pipelines/actions/agent-instructions-audit@v1
+        uses: xpmatteo/agbredo-pipelines/actions/agent-instructions-audit@v2
         with:
           step: check
           execution-file: ${{ steps.claude.outputs.execution_file }}
@@ -189,19 +198,19 @@ jobs:
       # below can never push them. Runs even when the audit failed.
       - name: Delete the checks from the local bw
         if: always() && steps.gate.outputs.skip == 'false'
-        uses: xpmatteo/agbredo-pipelines/actions/agent-instructions-audit@v1
+        uses: xpmatteo/agbredo-pipelines/actions/agent-instructions-audit@v2
         with:
           step: cleanup
 
       - name: File the questions in bw
         if: steps.gate.outputs.skip == 'false'
-        uses: xpmatteo/agbredo-pipelines/actions/agent-instructions-audit@v1
+        uses: xpmatteo/agbredo-pipelines/actions/agent-instructions-audit@v2
         with:
           step: file-questions
 
       - name: Open a PR with the fixes
         if: steps.gate.outputs.skip == 'false'
-        uses: xpmatteo/agbredo-pipelines/actions/agent-instructions-audit@v1
+        uses: xpmatteo/agbredo-pipelines/actions/agent-instructions-audit@v2
         with:
           step: open-pr
           branch: ${{ env.BRANCH }}

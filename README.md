@@ -8,8 +8,7 @@ Agbredo's [glossary](https://github.com/xpmatteo/agbredo/blob/main/docs/00-gloss
   workflow under `.github/workflows/`. Its path names it.
 - A target repository uses a pipeline through a **caller workflow**: a small
   file that holds the triggers and permissions and calls exactly one
-  pipeline. The repository plus the caller's workflow file is a
-  **deployment**; Agbredo creates it on its first run that sends telemetry.
+  pipeline. The repository plus the pipeline is a **deployment**.
 - Each GitHub run attempt of a deployment is a **run**; each Claude Code
   invocation inside it is an **agent run**.
 
@@ -39,9 +38,7 @@ concurrency:
 
 jobs:
   audit:
-    uses: xpmatteo/agbredo-pipelines/.github/workflows/agent-instructions-audit.yml@v1
-    with:
-      agbredo-url: ${{ vars.AGBREDO_URL }}
+    uses: xpmatteo/agbredo-pipelines/.github/workflows/agent-instructions-audit.yml@v2
     secrets:
       CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
 ```
@@ -49,33 +46,45 @@ jobs:
 `secrets: inherit` instead of the `secrets:` map passes all of the caller's
 secrets; naming them passes only what the pipeline needs.
 
-Agbredo knows the deployment by the caller's repository and workflow file, so
-keep the caller's file name when you change pipelines or versions. Telemetry
-needs Agbredo's GitHub App installed on the target repository and
-`id-token: write`; it never stops the pipeline.
+Agbredo sees a run through the `workflow_run` webhook of Agbredo's GitHub
+App, installed on the target repository. Claude Code sends its telemetry to
+`https://www.agbredo.com/api/otlp` with a GitHub OIDC token, which needs
+`id-token: write`. Agbredo accepts the token because the job runs a pipeline
+from this repository, so the target repository needs no telemetry secret or
+variable.
 
 ## Versions
 
-Callers pin a pipeline by tag (`@v1`), never `@main`. The tag is the
+Callers pin a pipeline by tag (`@v2`), never `@main`. The tag is the
 pipeline's version; GitHub reports it in the run's identity token
 (`job_workflow_ref`), so a run cannot misstate it.
 
 Inside a reusable workflow, `actions/checkout` and `./` paths refer to the
 caller's repository. So a pipeline ships its scripts, prompts and checklists
 in a composite action under `actions/`, and calls it by its full name at the
-same tag: `xpmatteo/agbredo-pipelines/actions/<name>@v1`. A pipeline and its
+same tag: `xpmatteo/agbredo-pipelines/actions/<name>@v2`. A pipeline and its
 actions are bumped together: a release changes the `@vN` references in the
 pipeline, then tags that commit `vN`. Moving an existing tag changes what
 every caller of that tag runs on its next run.
 
 A caller that pins a branch or a SHA, for example to test a change, still
-gets the actions at `@v1`, because the pipeline names them by tag. To test
-a branch end to end, point the pipeline's `@v1` references at that branch
+gets the actions at `@v2`, because the pipeline names them by tag. To test
+a branch end to end, point the pipeline's `@v2` references at that branch
 for the duration of the test.
 
-Pipelines send telemetry with
-[`xpmatteo/agbredo/integrations/claude-code-otlp`](https://github.com/xpmatteo/agbredo/tree/main/integrations/claude-code-otlp),
-pinned to an Agbredo release tag.
+## Telemetry
+
+Before each Claude Code step, a pipeline gets a GitHub OIDC token with
+audience `agbredo` and puts it in `OTEL_EXPORTER_OTLP_HEADERS` through
+`$GITHUB_ENV`; claude-code-action hides the OIDC variables from Claude, so
+Claude Code cannot get it itself. The Claude Code step turns on telemetry in
+its `settings` and sets `OTEL_RESOURCE_ATTRIBUTES` with the repository, run
+id, run attempt, job and `github.step`, a name unique in the job. Agbredo
+lists a run's agents by `github.step`. See the agent instructions audit for
+an example.
+
+Agbredo forwards telemetry only from pipelines in the repositories it lists
+in `AGBREDO_PIPELINE_REPOS`, which includes this one.
 
 ## Marking escalations for Agbredo
 
@@ -87,10 +96,12 @@ Agbredo-Run: $GITHUB_RUN_ID/$GITHUB_RUN_ATTEMPT
 
 Put a blank line before it. Skip the line if either variable is not set.
 
-Agbredo links the PR to the run as "declared" only when all of these hold:
-the PR author is a bot, the PR branch is in the same repository, and the PR
-was opened during that run. Otherwise the PR is still recorded, as inferred
-or unlinked, with a finding.
+Do the same for an Issue. Agbredo reads the marker from the `opened` event
+of the `pull_request` or `issues` webhook, and links the PR or Issue to that
+run. Without the marker, it does not link it. An agent writes the text; a
+deterministic step opens the PR or Issue and adds the marker.
+
+Label PRs and Issues opened by a pipeline `ai-agent-generated`.
 
 ## Pipelines
 
@@ -114,13 +125,12 @@ The target repository needs:
 - the secret `CLAUDE_CODE_OAUTH_TOKEN`, from `claude setup-token`;
 - under Settings > Actions > General, "Allow GitHub Actions to create and
   approve pull requests";
-- for telemetry, the variable `AGBREDO_URL` and Agbredo's GitHub App.
+- Agbredo's GitHub App, for Agbredo to see its runs and PRs.
 
 Inputs:
 
 | Input | Default | Meaning |
 | --- | --- | --- |
-| `agbredo-url` | empty | Agbredo's HTTPS origin, without a path. Empty sends no telemetry. |
 | `extra-instructions` | empty | Text appended to Claude's prompt: what to know about this repository to apply the checks, such as its issue ID prefix, where its test and design docs are, and files absent on purpose. |
 | `pr-branch` | `agent-instructions-audit` | The branch fixes are pushed to and the PR comes from. While a PR from it is open, the audit skips. |
 | `base-branch` | `main` | The branch audited and targeted by the PR. A scheduled caller runs on its default branch; the pipeline checks out this branch. |
